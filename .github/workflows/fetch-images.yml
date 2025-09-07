@@ -2,8 +2,8 @@ name: fetch-images
 
 on:
   schedule:
-    - cron: "30 */1 * * *" # 6시간마다(UTC)
-  workflow_dispatch: {}     # 수동 실행 허용
+    - cron: "30 */1 * * *"
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -20,6 +20,9 @@ jobs:
         run: |
           mkdir -p images
           test -f images/catalog.json || echo '{"files":[]}' > images/catalog.json
+
+      - name: Install ImageMagick
+        run: sudo apt-get update && sudo apt-get install -y imagemagick
 
       - name: Download images
         shell: bash
@@ -46,15 +49,32 @@ jobs:
             folder="${AREA}x${Y}"
             name="${DAYTIM}_${folder}.png"
             output_path="images/${folder}/${name}"
-
+            
             mkdir -p "images/${folder}"
             
-            # Use curl's output option to save directly
             if curl -L --fail --silent --show-error -o "$output_path" "$u"; then
               echo "Saved $output_path"
             else
               echo "Download failed or empty for $u" >&2
-              exit 1 # Exit on failure
+              exit 1
+            fi
+          done
+
+      - name: Create GIFs
+        shell: bash
+        run: |
+          for dir in images/*/; do
+            if [ -d "$dir" ]; then
+              files=$(find "$dir" -name "*.png" | sort)
+              
+              if [ -n "$files" ]; then
+                gif_name=$(basename "$dir")
+                output_path="images/${gif_name}.gif"
+                convert -delay 10 -loop 0 $files "$output_path"
+                echo "Generated GIF: $output_path"
+              else
+                echo "No images found in $dir to create a GIF."
+              fi
             fi
           done
 
@@ -115,7 +135,7 @@ jobs:
           git config user.name "github-actions"
           git add -A
           if ! git diff --cached --quiet; then
-            git commit -m "chore: fetch images (no-conditional) [skip ci]"
+            git commit -m "chore: fetch images and create GIFs [skip ci]"
             git push
           else
             echo "No changes to commit."
